@@ -11,12 +11,11 @@ import {
 } from "lucide-react-native";
 import { useEffect } from "react";
 import {
-  Alert,
   Pressable,
   ScrollView,
   StyleSheet,
   Text,
-  View,
+  View
 } from "react-native";
 
 import { useVideoStore } from "../../store/useVideoStore";
@@ -90,11 +89,7 @@ export default function VideoPreviewScreen() {
 
   const continueToCompression = () => {
     player.pause();
-
-    Alert.alert(
-      "Next milestone",
-      "Compression settings will be implemented next.",
-    );
+    router.push("/video/compress");
   };
 
   return (

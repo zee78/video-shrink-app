@@ -13,6 +13,8 @@ import {
 } from "react-native";
 import { useVideoStore } from "../../store/useVideoStore";
 
+import { getVideoProcessorInfo } from "../../../modules/video-processor/src";
+
 function formatSize(bytes: number | null): string {
   if (bytes == null) return "Unknown size";
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
@@ -24,6 +26,24 @@ export default function HomeScreen() {
 
   const video = useVideoStore((state) => state.selectedVideo);
   const setSelectedVideo = useVideoStore((state) => state.setSelectedVideo);
+
+  const testNativeEngine = () => {
+    try {
+      const info = getVideoProcessorInfo();
+
+      Alert.alert(
+        "Native Engine",
+        `Status: ${info.status}\nPlatform: ${info.platform}`,
+      );
+    } catch (error) {
+      console.error("Native engine test failed:", error);
+
+      Alert.alert(
+        "Native Engine Error",
+        "Unable to communicate with the Android module.",
+      );
+    }
+  };
 
   async function pickVideo() {
     try {
@@ -90,6 +110,26 @@ export default function HomeScreen() {
         <View style={styles.button}>
           <Text style={styles.buttonText}>Browse Gallery</Text>
         </View>
+      </Pressable>
+
+      <Pressable
+        onPress={testNativeEngine}
+        style={{
+          backgroundColor: "#334155",
+          padding: 16,
+          borderRadius: 12,
+          marginTop: 20,
+          alignItems: "center",
+        }}
+      >
+        <Text
+          style={{
+            color: "#FFFFFF",
+            fontWeight: "600",
+          }}
+        >
+          Test Native Engine
+        </Text>
       </Pressable>
 
       {video && (

@@ -19,6 +19,7 @@ import {
   View,
 } from "react-native";
 
+import { compressVideo } from "../../../modules/video-processor/src";
 import { CompressionPreset, useVideoStore } from "../../store/useVideoStore";
 
 const PRESETS: {
@@ -69,10 +70,14 @@ export default function CompressScreen() {
   const updateSettings = useVideoStore(
     (state) => state.updateCompressionSettings,
   );
+  const setCompressionResult = useVideoStore(
+    (state) => state.setCompressionResult,
+  );
 
   const [targetText, setTargetText] = useState(
     settings.targetSizeMB?.toString() ?? "",
   );
+  const [isCompressing, setIsCompressing] = useState(false);
 
   if (!video) {
     return (
@@ -123,28 +128,40 @@ export default function CompressScreen() {
     });
   };
 
-  const handleContinue = () => {
-    if (settings.preset === "custom") {
-      const target = settings.targetSizeMB;
-
-      if (target == null || target <= 0) {
-        Alert.alert("Invalid target size", "Enter a valid target size in MB.");
-        return;
-      }
-
-      if (originalSizeMB != null && target >= originalSizeMB) {
-        Alert.alert(
-          "Target is too large",
-          "Choose a size smaller than the original video.",
-        );
-        return;
-      }
+  const handleContinue = async () => {
+    if (!video || isCompressing) {
+      return;
     }
 
-    Alert.alert(
-      "Settings saved",
-      "Your compression settings are ready. The native compression engine is the next milestone.",
-    );
+    if (settings.preset !== "balanced") {
+      Alert.alert(
+        "Balanced preset only",
+        "The first native test currently supports the Balanced preset. Other presets will be connected next.",
+      );
+      return;
+    }
+
+    try {
+      setIsCompressing(true);
+
+      const result = await compressVideo(video.uri);
+      setCompressionResult(result);
+
+      router.push("/video/result");
+
+      console.log("Compression result:", result);
+    } catch (error) {
+      console.error("Compression failed:", error);
+
+      Alert.alert(
+        "Video Export Failed",
+        error instanceof Error
+          ? error.message
+          : "An unexpected error occurred.",
+      );
+    } finally {
+      setIsCompressing(false);
+    }
   };
 
   return (
@@ -288,9 +305,14 @@ export default function CompressScreen() {
       </ScrollView>
 
       <View style={styles.footer}>
-        <Pressable style={styles.button} onPress={handleContinue}>
+        <Pressable
+          style={[styles.button, isCompressing && { opacity: 0.6 }]}
+          disabled={isCompressing}
+          onPress={handleContinue}
+        >
           <Text style={styles.buttonText}>
-            <Zap size={17} color="#FFFFFF" /> Continue
+            <Zap size={17} color="#FFFFFF" />
+            {isCompressing ? "Processing Video..." : "Start Compression"}
           </Text>
         </Pressable>
       </View>

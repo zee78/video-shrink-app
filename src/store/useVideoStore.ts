@@ -12,6 +12,12 @@ export interface SelectedVideo {
   mimeType: string | null;
 }
 
+export interface CompressionResult {
+  uri: string;
+  outputPath: string;
+  outputSizeBytes: number;
+}
+
 export interface CompressionSettings {
   preset: CompressionPreset;
   targetSizeMB: number | null;
@@ -25,6 +31,9 @@ interface VideoStore {
   clearSelectedVideo: () => void;
   updateCompressionSettings: (settings: Partial<CompressionSettings>) => void;
   resetCompressionSettings: () => void;
+  compressionResult: CompressionResult | null;
+
+  setCompressionResult: (result: CompressionResult | null) => void;
 }
 
 const defaultCompressionSettings: CompressionSettings = {
@@ -34,12 +43,16 @@ const defaultCompressionSettings: CompressionSettings = {
 };
 
 export const useVideoStore = create<VideoStore>((set) => ({
+  compressionResult: null,
+
+  setCompressionResult: (result) => set({ compressionResult: result }),
   selectedVideo: null,
   compressionSettings: { ...defaultCompressionSettings },
 
   setSelectedVideo: (video) =>
     set({
       selectedVideo: video,
+      compressionResult: null,
       compressionSettings: { ...defaultCompressionSettings },
     }),
 

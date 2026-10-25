@@ -3,3 +3,9 @@ export interface VideoProcessorInfo {
   platform: string;
   engine: string;
 }
+
+export interface CompressionResult {
+  uri: string;
+  outputPath: string;
+  outputSizeBytes: number;
+}

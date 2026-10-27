@@ -1,6 +1,9 @@
 
 package expo.modules.videoprocessor
 
+import androidx.media3.transformer.DefaultEncoderFactory
+import androidx.media3.transformer.VideoEncoderSettings
+import android.media.MediaMetadataRetriever
 import android.net.Uri
 import android.os.Handler
 import android.os.Looper
@@ -23,12 +26,20 @@ import android.content.ContentValues
 import android.os.Build
 import android.os.Environment
 import android.provider.MediaStore
+import android.util.Log
 
 
 import java.io.File
 import java.util.UUID
 
 class VideoProcessorModule : Module() {
+
+    private data class SourceMetadata(
+        val width: Int?,
+        val height: Int?,
+        val bitrate: Int?,
+        val durationMs: Long?
+    )
 
     private val mainHandler = Handler(Looper.getMainLooper())
 
@@ -48,10 +59,19 @@ class VideoProcessorModule : Module() {
 
         AsyncFunction("compressVideo") {
             inputUri: String,
+            preset: String,
+            removeAudio: Boolean,
+            targetSizeMB: Double?,
             promise: Promise ->
 
             mainHandler.post {
-                startCompression(inputUri, promise)
+                startCompression(
+                    inputUri,
+                    preset,
+                    removeAudio,
+                    targetSizeMB,
+                    promise
+                )
             }
         }
 
@@ -71,6 +91,9 @@ class VideoProcessorModule : Module() {
 
     private fun startCompression(
         inputUri: String,
+        preset: String,
+        removeAudio: Boolean,
+        targetSizeMB: Double?,
         promise: Promise
     ) {
         if (activeTransformer != null) {
@@ -91,6 +114,21 @@ class VideoProcessorModule : Module() {
             return
         }
 
+        val targetShortSide = when (preset) {
+            "small" -> 480
+            "balanced" -> 720
+            "high" -> 1080
+            "custom" -> 1080
+            else -> {
+                promise.reject(
+                    "INVALID_PRESET",
+                    "Unsupported compression preset: $preset",
+                    null
+                )
+                return
+            }
+        }
+
         val context = appContext.reactContext
 
         if (context == null) {
@@ -107,6 +145,94 @@ class VideoProcessorModule : Module() {
         try {
             val uri = Uri.parse(inputUri)
 
+            val retriever = MediaMetadataRetriever()
+
+            val sourceMetadata = try {
+                retriever.setDataSource(context, uri)
+
+                SourceMetadata(
+                    width = retriever.extractMetadata(
+                        MediaMetadataRetriever.METADATA_KEY_VIDEO_WIDTH
+                    )?.toIntOrNull(),
+                    height = retriever.extractMetadata(
+                        MediaMetadataRetriever.METADATA_KEY_VIDEO_HEIGHT
+                    )?.toIntOrNull(),
+                    bitrate = retriever.extractMetadata(
+                        MediaMetadataRetriever.METADATA_KEY_BITRATE
+                    )?.toIntOrNull(),
+                    durationMs = retriever.extractMetadata(
+                        MediaMetadataRetriever.METADATA_KEY_DURATION
+                    )?.toLongOrNull()
+                )
+            } finally {
+                retriever.release()
+            }
+
+            val sourceWidth = sourceMetadata.width
+            val sourceHeight = sourceMetadata.height
+            val sourceBitrate = sourceMetadata.bitrate
+            val durationMs = sourceMetadata.durationMs
+
+            if (
+                sourceWidth == null ||
+                sourceHeight == null ||
+                sourceWidth <= 0 ||
+                sourceHeight <= 0
+            ) {
+                throw IllegalArgumentException(
+                    "Unable to determine video resolution."
+                )
+            }
+
+            val sourceShortSide = minOf(
+                sourceWidth,
+                sourceHeight
+            )
+
+            val outputShortSide = minOf(
+                sourceShortSide,
+                targetShortSide
+            )
+
+            val targetVideoBitrate =
+                if (preset == "custom") {
+                    val requestedSize = targetSizeMB
+                        ?: throw IllegalArgumentException(
+                            "Custom target size is required."
+                        )
+
+                    val videoDuration = durationMs
+                        ?: throw IllegalArgumentException(
+                            "Unable to determine video duration."
+                        )
+
+                    calculateCustomBitrate(
+                        targetSizeMB = requestedSize,
+                        durationMs = videoDuration,
+                        removeAudio = removeAudio
+                    )
+                } else {
+                    calculateSmartBitrate(
+                        preset = preset,
+                        sourceBitrate = sourceBitrate,
+                        outputShortSide = outputShortSide,
+                        removeAudio = removeAudio
+                    )
+                }
+
+             Log.d(
+                "VideoShrink",
+                """
+                Compression settings:
+                Preset: $preset
+                Source resolution: ${sourceWidth}x${sourceHeight}
+                Source bitrate: $sourceBitrate
+                Target short side: $outputShortSide
+                Target video bitrate: $targetVideoBitrate
+                Remove audio: $removeAudio
+                """.trimIndent()
+            )
+
             outputFile = File(
                 context.cacheDir,
                 "videoshrink_${UUID.randomUUID()}.mp4"
@@ -114,19 +240,41 @@ class VideoProcessorModule : Module() {
 
             val mediaItem = MediaItem.fromUri(uri)
 
+            val videoEffects =
+                if (sourceShortSide > outputShortSide) {
+                    listOf(
+                        Presentation.createForShortSide(
+                            outputShortSide
+                        )
+                    )
+                } else {
+                    emptyList()
+                }
+
             val editedMediaItem =
                 EditedMediaItem.Builder(mediaItem)
+                    .setRemoveAudio(removeAudio)
                     .setEffects(
                         Effects(
                             emptyList(),
-                            listOf(
-                                Presentation.createForHeight(720)
-                            )
+                            videoEffects
                         )
                     )
                     .build()
 
             val outputPath = outputFile.absolutePath
+
+            val videoEncoderSettings =
+                VideoEncoderSettings.Builder()
+                    .setBitrate(targetVideoBitrate)
+                    .build()
+
+            val encoderFactory =
+                DefaultEncoderFactory.Builder(context)
+                    .setRequestedVideoEncoderSettings(
+                        videoEncoderSettings
+                    )
+                    .build()
 
             val transformer =
                 Transformer.Builder(context)
@@ -136,6 +284,7 @@ class VideoProcessorModule : Module() {
                     .setAudioMimeType(
                         MimeTypes.AUDIO_AAC
                     )
+                    .setEncoderFactory(encoderFactory)
                     .addListener(
                         object : Transformer.Listener {
 
@@ -207,6 +356,81 @@ class VideoProcessorModule : Module() {
                 exception
             )
         }
+    }
+
+    private fun calculateSmartBitrate(
+        preset: String,
+        sourceBitrate: Int?,
+        outputShortSide: Int,
+        removeAudio: Boolean
+    ): Int {
+
+        // Target bitrate limits in bits per second.
+        val presetMaxBitrate = when (preset) {
+            "small" -> 600_000
+            "balanced" -> 1_500_000
+            "high" -> 3_000_000
+            else -> 600_000
+        }
+
+        // Lower-resolution videos need less bitrate.
+        val resolutionScale =
+            (outputShortSide.toDouble() / 480.0)
+                .let { it * it }
+
+        val resolutionAwareBitrate =
+            (600_000 * resolutionScale)
+                .toInt()
+                .coerceAtMost(presetMaxBitrate)
+
+        // If source bitrate is unknown, use the preset target.
+        if (sourceBitrate == null || sourceBitrate <= 0) {
+            return resolutionAwareBitrate.coerceAtLeast(64_000)
+        }
+
+        // Allow room for container overhead and audio.
+        val audioBudget =
+            if (removeAudio) 0 else 96_000
+
+        val sourceBasedBudget =
+            (sourceBitrate * 0.80)
+                .toInt() - audioBudget
+
+        return minOf(
+            resolutionAwareBitrate,
+            sourceBasedBudget.coerceAtLeast(64_000)
+        )
+    }
+
+    private fun calculateCustomBitrate(
+        targetSizeMB: Double,
+        durationMs: Long,
+        removeAudio: Boolean
+    ): Int {
+        require(targetSizeMB.isFinite() && targetSizeMB > 0.0) {
+            "Target size must be greater than zero."
+        }
+
+        require(durationMs > 0L) {
+            "Unable to determine video duration."
+        }
+
+        val durationSeconds = durationMs / 1000.0
+        val targetSizeBytes = targetSizeMB * 1024.0 * 1024.0
+        val usableBits = targetSizeBytes * 8.0 * 0.95
+        val totalBitrate = usableBits / durationSeconds
+        val audioBitrate = if (removeAudio) 0 else 128_000
+        val videoBitrate = totalBitrate - audioBitrate
+
+        require(videoBitrate >= 100_000.0) {
+            "Target size is too small for this video's duration."
+        }
+
+        require(videoBitrate <= Int.MAX_VALUE.toDouble()) {
+            "Target size is too large."
+        }
+
+        return videoBitrate.toInt()
     }
 
     private fun saveVideoToGallery(

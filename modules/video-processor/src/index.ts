@@ -1,6 +1,15 @@
-import type { CompressionResult, VideoProcessorInfo } from './types';
+import type {
+  CompressionResult,
+  CompressVideoOptions,
+  VideoProcessorInfo,
+} from './types';
 
-export type { CompressionResult, VideoProcessorInfo } from './types';
+export type {
+  CompressionResult,
+  CompressVideoOptions,
+  NativeCompressionPreset,
+  VideoProcessorInfo,
+} from './types';
 
 export function getVideoProcessorInfo(): VideoProcessorInfo {
   return {
@@ -10,7 +19,9 @@ export function getVideoProcessorInfo(): VideoProcessorInfo {
   };
 }
 
-export async function compressVideo(_inputUri: string): Promise<CompressionResult> {
+export async function compressVideo(
+  _options: CompressVideoOptions,
+): Promise<CompressionResult> {
   throw new Error('Video compression is currently available on Android only.');
 }
 

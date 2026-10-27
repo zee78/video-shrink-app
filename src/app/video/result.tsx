@@ -1,12 +1,19 @@
 import { useRouter } from "expo-router";
+import { StatusBar } from "expo-status-bar";
 import { useVideoPlayer, VideoView } from "expo-video";
+import { SafeAreaView } from "react-native-safe-area-context";
+
 import {
+  AlertTriangle,
+  ArrowLeft,
   CheckCircle2,
   Download,
   FileVideo,
   RotateCcw,
 } from "lucide-react-native";
+
 import { useState } from "react";
+
 import {
   ActivityIndicator,
   Alert,
@@ -50,6 +57,8 @@ export default function VideoResultScreen() {
       ? (1 - compressedSize / originalSize) * 100
       : null;
 
+  const isLarger = reduction !== null && reduction < 0;
+
   const handleSave = async () => {
     if (!result || saving || savedUri) {
       return;
@@ -80,9 +89,16 @@ export default function VideoResultScreen() {
     }
   };
 
+  const handleCompressAnother = () => {
+    player.pause();
+    router.replace("/");
+  };
+
   if (!video || !result) {
     return (
-      <View style={styles.emptyContainer}>
+      <SafeAreaView style={styles.emptyContainer} edges={["top", "bottom"]}>
+        <StatusBar style="light" />
+
         <Text style={styles.emptyTitle}>No compressed video found</Text>
 
         <Pressable
@@ -91,18 +107,44 @@ export default function VideoResultScreen() {
         >
           <Text style={styles.buttonText}>Go to Home</Text>
         </Pressable>
-      </View>
+      </SafeAreaView>
     );
   }
 
   return (
-    <View style={styles.container}>
+    <SafeAreaView style={styles.container} edges={["top", "bottom"]}>
+      <StatusBar style="light" />
+
+      {/* HEADER */}
+      <View style={styles.header}>
+        <Pressable
+          onPress={() => {
+            player.pause();
+            router.back();
+          }}
+          style={styles.backButton}
+          hitSlop={10}
+          disabled={saving}
+        >
+          <ArrowLeft size={22} color="#FFFFFF" />
+        </Pressable>
+
+        <View style={styles.headerTextContainer}>
+          <Text style={styles.headerTitle}>Compression Result</Text>
+
+          <Text style={styles.headerSubtitle}>Preview and save your video</Text>
+        </View>
+      </View>
+
+      {/* SCROLLABLE CONTENT */}
       <ScrollView
+        style={styles.scrollView}
         contentContainerStyle={styles.content}
         showsVerticalScrollIndicator={false}
       >
+        {/* SUCCESS MESSAGE */}
         <View style={styles.successHeader}>
-          <CheckCircle2 size={56} color="#22C55E" />
+          <CheckCircle2 size={50} color="#22C55E" />
 
           <Text style={styles.title}>Compression Complete!</Text>
 
@@ -111,6 +153,7 @@ export default function VideoResultScreen() {
           </Text>
         </View>
 
+        {/* VIDEO PLAYER */}
         <View style={styles.playerCard}>
           <VideoView
             player={player}
@@ -120,6 +163,7 @@ export default function VideoResultScreen() {
           />
         </View>
 
+        {/* FILE NAME */}
         <View style={styles.fileCard}>
           <FileVideo size={20} color="#A78BFA" />
 
@@ -128,6 +172,7 @@ export default function VideoResultScreen() {
           </Text>
         </View>
 
+        {/* SIZE COMPARISON */}
         <View style={styles.comparisonRow}>
           <View style={styles.sizeCard}>
             <Text style={styles.cardLabel}>Original</Text>
@@ -144,21 +189,46 @@ export default function VideoResultScreen() {
           </View>
         </View>
 
+        {/* COMPRESSION RESULT */}
         {reduction !== null && (
-          <View style={styles.savingsCard}>
-            <Text style={styles.savingsText}>
-              {reduction >= 0
+          <View style={[styles.savingsCard, isLarger && styles.warningCard]}>
+            {isLarger ? (
+              <AlertTriangle size={26} color="#F87171" />
+            ) : (
+              <CheckCircle2 size={26} color="#4ADE80" />
+            )}
+
+            <Text style={[styles.savingsText, isLarger && styles.warningText]}>
+              {reduction > 0
                 ? `${reduction.toFixed(1)}% smaller`
-                : `${Math.abs(reduction).toFixed(1)}% larger`}
+                : reduction < 0
+                  ? `${Math.abs(reduction).toFixed(1)}% larger`
+                  : "No size reduction"}
             </Text>
+
+            {isLarger && (
+              <Text style={styles.warningDescription}>
+                The compressed video is larger than the original. Consider
+                keeping the original video.
+              </Text>
+            )}
           </View>
         )}
 
+        {/* INFORMATION */}
         <Text style={styles.infoText}>
           Preview your video before saving it. The original video remains
           unchanged.
         </Text>
 
+        <Text style={styles.storageInfo}>
+          Saved videos are stored in Movies/VideoShrink. Unsaved results remain
+          in temporary app storage.
+        </Text>
+      </ScrollView>
+
+      {/* FIXED BOTTOM ACTIONS */}
+      <View style={styles.footer}>
         <Pressable
           style={[
             styles.primaryButton,
@@ -169,6 +239,8 @@ export default function VideoResultScreen() {
         >
           {saving ? (
             <ActivityIndicator color="#FFFFFF" />
+          ) : savedUri ? (
+            <CheckCircle2 size={20} color="#FFFFFF" />
           ) : (
             <Download size={20} color="#FFFFFF" />
           )}
@@ -184,22 +256,15 @@ export default function VideoResultScreen() {
 
         <Pressable
           style={styles.secondaryButton}
-          onPress={() => {
-            player.pause();
-            router.replace("/");
-          }}
+          disabled={saving}
+          onPress={handleCompressAnother}
         >
           <RotateCcw size={18} color="#FFFFFF" />
 
           <Text style={styles.secondaryButtonText}>Compress Another Video</Text>
         </Pressable>
-
-        <Text style={styles.storageInfo}>
-          Saved videos are stored in Movies/VideoShrink. Unsaved results remain
-          in temporary app storage.
-        </Text>
-      </ScrollView>
-    </View>
+      </View>
+    </SafeAreaView>
   );
 }
 
@@ -208,19 +273,65 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: "#0F172A",
   },
-  content: {
-    padding: 20,
-    paddingTop: 38,
-    paddingBottom: 48,
+
+  /* HEADER */
+  header: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 20,
+    paddingTop: 18,
+    paddingBottom: 18,
+    borderBottomWidth: 1,
+    borderBottomColor: "#1E293B",
+    backgroundColor: "#0F172A",
   },
+
+  backButton: {
+    width: 42,
+    height: 42,
+    borderRadius: 12,
+    backgroundColor: "#1E293B",
+    alignItems: "center",
+    justifyContent: "center",
+    marginRight: 14,
+  },
+
+  headerTextContainer: {
+    flex: 1,
+  },
+
+  headerTitle: {
+    color: "#FFFFFF",
+    fontSize: 21,
+    fontWeight: "700",
+  },
+
+  headerSubtitle: {
+    color: "#94A3B8",
+    fontSize: 12,
+    marginTop: 3,
+  },
+
+  /* SCROLL */
+  scrollView: {
+    flex: 1,
+  },
+
+  content: {
+    paddingHorizontal: 20,
+    paddingTop: 24,
+    paddingBottom: 30,
+  },
+
+  /* SUCCESS HEADER */
   successHeader: {
     alignItems: "center",
-    gap: 12,
-    marginBottom: 28,
+    gap: 10,
+    marginBottom: 24,
   },
   title: {
     color: "#FFFFFF",
-    fontSize: 24,
+    fontSize: 23,
     fontWeight: "800",
     textAlign: "center",
   },
@@ -229,16 +340,20 @@ const styles = StyleSheet.create({
     fontSize: 13,
     textAlign: "center",
   },
+
+  /* VIDEO PLAYER */
   playerCard: {
     backgroundColor: "#000000",
     borderRadius: 18,
     overflow: "hidden",
-    marginBottom: 20,
+    marginBottom: 18,
   },
   videoPlayer: {
     width: "100%",
     height: 230,
   },
+
+  /* FILE CARD */
   fileCard: {
     backgroundColor: "#1E293B",
     borderRadius: 14,
@@ -253,6 +368,8 @@ const styles = StyleSheet.create({
     fontSize: 14,
     flex: 1,
   },
+
+  /* SIZE COMPARISON */
   comparisonRow: {
     flexDirection: "row",
     gap: 12,
@@ -278,34 +395,76 @@ const styles = StyleSheet.create({
     fontSize: 19,
     fontWeight: "800",
   },
+
+  /* SAVINGS */
   savingsCard: {
     backgroundColor: "#12392F",
     padding: 18,
     borderRadius: 14,
     alignItems: "center",
     marginTop: 16,
+    gap: 8,
   },
   savingsText: {
     color: "#4ADE80",
     fontSize: 19,
     fontWeight: "800",
   },
+
+  warningCard: {
+    backgroundColor: "#451A1A",
+    borderWidth: 1,
+    borderColor: "#EF4444",
+  },
+
+  warningText: {
+    color: "#F87171",
+  },
+
+  warningDescription: {
+    color: "#FCA5A5",
+    fontSize: 12,
+    textAlign: "center",
+    marginTop: 8,
+    lineHeight: 18,
+  },
+
+  /* INFO */
   infoText: {
     color: "#94A3B8",
     textAlign: "center",
-    marginVertical: 24,
+    marginTop: 24,
     fontSize: 12,
     lineHeight: 19,
   },
+
+  storageInfo: {
+    color: "#64748B",
+    textAlign: "center",
+    marginTop: 18,
+    fontSize: 11,
+    lineHeight: 17,
+  },
+
+  /* FOOTER */
+  footer: {
+    backgroundColor: "#0F172A",
+    paddingHorizontal: 20,
+    paddingTop: 16,
+    paddingBottom: 12,
+    borderTopWidth: 1,
+    borderTopColor: "#334155",
+    gap: 12,
+  },
   primaryButton: {
     backgroundColor: "#7C3AED",
-    borderRadius: 14,
-    padding: 17,
+    borderRadius: 15,
+    minHeight: 56,
+    paddingHorizontal: 20,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
     gap: 10,
-    marginBottom: 12,
   },
   disabledButton: {
     opacity: 0.65,
@@ -317,8 +476,9 @@ const styles = StyleSheet.create({
   },
   secondaryButton: {
     backgroundColor: "#334155",
-    borderRadius: 14,
-    padding: 17,
+    borderRadius: 15,
+    minHeight: 52,
+    paddingHorizontal: 20,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
@@ -327,14 +487,10 @@ const styles = StyleSheet.create({
   secondaryButtonText: {
     color: "#FFFFFF",
     fontWeight: "600",
+    fontSize: 14,
   },
-  storageInfo: {
-    color: "#64748B",
-    textAlign: "center",
-    marginTop: 24,
-    fontSize: 11,
-    lineHeight: 17,
-  },
+
+  /* EMPTY STATE */
   emptyContainer: {
     flex: 1,
     backgroundColor: "#0F172A",

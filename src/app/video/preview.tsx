@@ -1,8 +1,10 @@
 import { useRouter } from "expo-router";
+import { StatusBar } from "expo-status-bar";
 import { useVideoPlayer, VideoView } from "expo-video";
 import {
   ArrowLeft,
   CheckCircle2,
+  ChevronRight,
   Clock3,
   FileVideo,
   HardDrive,
@@ -15,8 +17,9 @@ import {
   ScrollView,
   StyleSheet,
   Text,
-  View
+  View,
 } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 
 import { useVideoStore } from "../../store/useVideoStore";
 
@@ -61,7 +64,7 @@ export default function VideoPreviewScreen() {
 
   if (!selectedVideo) {
     return (
-      <View style={styles.emptyContainer}>
+      <SafeAreaView style={styles.emptyContainer} edges={["top", "bottom"]}>
         <Text style={styles.emptyTitle}>No video selected</Text>
 
         <Pressable
@@ -70,7 +73,7 @@ export default function VideoPreviewScreen() {
         >
           <Text style={styles.primaryButtonText}>Select a Video</Text>
         </Pressable>
-      </View>
+      </SafeAreaView>
     );
   }
 
@@ -93,16 +96,28 @@ export default function VideoPreviewScreen() {
   };
 
   return (
-    <View style={styles.container}>
+    <SafeAreaView style={styles.container} edges={["top", "bottom"]}>
+      <StatusBar style="light" />
+
+      {/* HEADER */}
       <View style={styles.header}>
-        <Pressable onPress={() => router.back()} style={styles.backButton}>
-          <ArrowLeft size={24} color="#FFFFFF" />
+        <Pressable
+          onPress={() => router.back()}
+          style={styles.backButton}
+          hitSlop={10}
+        >
+          <ArrowLeft size={22} color="#FFFFFF" />
         </Pressable>
 
-        <Text style={styles.headerTitle}>Video Preview</Text>
+        <View style={styles.headerTextContainer}>
+          <Text style={styles.headerTitle}>Video Preview</Text>
+
+          <Text style={styles.headerSubtitle}>Review your selected video</Text>
+        </View>
       </View>
 
       <ScrollView
+        style={styles.scrollView}
         contentContainerStyle={styles.content}
         showsVerticalScrollIndicator={false}
       >
@@ -130,7 +145,11 @@ export default function VideoPreviewScreen() {
         <View style={styles.detailsCard}>
           <Text style={styles.sectionTitle}>Video Information</Text>
 
-          <Text style={styles.fileName}>{selectedVideo.name}</Text>
+          <Text style={styles.fileName} numberOfLines={2}>
+            {selectedVideo.name}
+          </Text>
+
+          <View style={styles.divider} />
 
           <View style={styles.detailRow}>
             <FileVideo color="#A78BFA" size={20} />
@@ -167,9 +186,11 @@ export default function VideoPreviewScreen() {
       <View style={styles.footer}>
         <Pressable style={styles.primaryButton} onPress={continueToCompression}>
           <Text style={styles.primaryButtonText}>Continue to Compression</Text>
+
+          <ChevronRight size={20} color="#FFFFFF" />
         </Pressable>
       </View>
-    </View>
+    </SafeAreaView>
   );
 }
 
@@ -183,24 +204,48 @@ const styles = StyleSheet.create({
     alignItems: "center",
     paddingHorizontal: 20,
     paddingTop: 18,
-    paddingBottom: 16,
-    gap: 16,
+    paddingBottom: 18,
+    borderBottomWidth: 1,
+    borderBottomColor: "#1E293B",
+    backgroundColor: "#0F172A",
   },
   backButton: {
-    padding: 8,
+    width: 42,
+    height: 42,
+    borderRadius: 12,
+    backgroundColor: "#1E293B",
+    alignItems: "center",
+    justifyContent: "center",
+    marginRight: 14,
+  },
+
+  headerTextContainer: {
+    flex: 1,
   },
   headerTitle: {
-    fontSize: 20,
     color: "#FFFFFF",
+    fontSize: 21,
     fontWeight: "700",
+  },
+
+  headerSubtitle: {
+    color: "#94A3B8",
+    fontSize: 12,
+    marginTop: 3,
+  },
+
+  /* SCROLL */
+  scrollView: {
+    flex: 1,
   },
   content: {
     paddingHorizontal: 20,
+    paddingTop: 22,
     paddingBottom: 30,
   },
   playerContainer: {
     backgroundColor: "#000000",
-    borderRadius: 16,
+    borderRadius: 18,
     overflow: "hidden",
   },
   videoPlayer: {
@@ -212,13 +257,14 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     backgroundColor: "#334155",
-    borderRadius: 12,
-    paddingVertical: 13,
+    borderRadius: 14,
+    paddingVertical: 15,
     gap: 10,
-    marginTop: 16,
+    marginTop: 18,
   },
   playbackText: {
     color: "#FFFFFF",
+    fontSize: 14,
     fontWeight: "600",
   },
   detailsCard: {
@@ -226,7 +272,7 @@ const styles = StyleSheet.create({
     borderRadius: 18,
     padding: 20,
     marginTop: 24,
-    gap: 15,
+    gap: 16,
   },
   sectionTitle: {
     color: "#FFFFFF",
@@ -235,13 +281,18 @@ const styles = StyleSheet.create({
   },
   fileName: {
     color: "#CBD5E1",
-    fontSize: 14,
-    marginBottom: 5,
+    fontSize: 13,
+    lineHeight: 20,
+  },
+
+  divider: {
+    height: 1,
+    backgroundColor: "#334155",
   },
   detailRow: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 10,
+    gap: 12,
   },
   detailLabel: {
     color: "#94A3B8",
@@ -254,10 +305,10 @@ const styles = StyleSheet.create({
     fontWeight: "600",
   },
   privacyCard: {
-    marginTop: 20,
+    marginTop: 22,
     padding: 16,
     backgroundColor: "#12392F",
-    borderRadius: 12,
+    borderRadius: 14,
     flexDirection: "row",
     gap: 12,
     alignItems: "center",
@@ -266,19 +317,25 @@ const styles = StyleSheet.create({
     color: "#BBF7D0",
     fontSize: 12,
     flex: 1,
-    lineHeight: 18,
+    lineHeight: 19,
   },
   footer: {
-    padding: 20,
+    backgroundColor: "#0F172A",
+    paddingHorizontal: 20,
+    paddingTop: 16,
+    paddingBottom: 12,
     borderTopWidth: 1,
     borderTopColor: "#334155",
   },
   primaryButton: {
     backgroundColor: "#7C3AED",
-    borderRadius: 14,
-    paddingVertical: 16,
+    borderRadius: 15,
+    minHeight: 56,
     paddingHorizontal: 20,
+    flexDirection: "row",
     alignItems: "center",
+    justifyContent: "center",
+    gap: 10,
   },
   primaryButtonText: {
     color: "#FFFFFF",

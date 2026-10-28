@@ -17,6 +17,9 @@ import androidx.media3.transformer.Effects
 import androidx.media3.transformer.ExportException
 import androidx.media3.transformer.ExportResult
 import androidx.media3.transformer.Transformer
+import androidx.media3.transformer.EncoderSelector
+import androidx.media3.transformer.EncoderUtil
+import com.google.common.collect.ImmutableList
 
 import expo.modules.kotlin.Promise
 import expo.modules.kotlin.modules.Module
@@ -27,7 +30,8 @@ import android.os.Build
 import android.os.Environment
 import android.provider.MediaStore
 import android.util.Log
-
+import android.media.MediaCodecInfo
+import android.media.MediaCodecList
 
 import java.io.File
 import java.util.UUID
@@ -118,7 +122,7 @@ class VideoProcessorModule : Module() {
             "small" -> 480
             "balanced" -> 720
             "high" -> 1080
-            "custom" -> 1080
+            "custom" -> 480
             else -> {
                 promise.reject(
                     "INVALID_PRESET",
@@ -269,12 +273,58 @@ class VideoProcessorModule : Module() {
                     .setBitrate(targetVideoBitrate)
                     .build()
 
-            val encoderFactory =
+            val encoderFactoryBuilder =
                 DefaultEncoderFactory.Builder(context)
-                    .setRequestedVideoEncoderSettings(
-                        videoEncoderSettings
-                    )
-                    .build()
+                    .setRequestedVideoEncoderSettings(videoEncoderSettings)
+
+            // Experiment: use a software H.264 encoder for Custom Size only.
+            if (preset == "custom") {
+
+                val softwareEncoderSelector = EncoderSelector { mimeType ->
+
+                    val availableEncoders =
+                        EncoderUtil.getSupportedEncoders(mimeType)
+
+                    val softwareEncoders = availableEncoders.filter { codec ->
+
+                        codec.name.startsWith(
+                            "c2.android.",
+                            ignoreCase = true
+                        ) || codec.name.startsWith(
+                            "OMX.google.",
+                            ignoreCase = true
+                        )
+                    }
+
+                    if (softwareEncoders.isNotEmpty()) {
+
+                        Log.d(
+                            "VideoShrink",
+                            "Software encoders: ${
+                                softwareEncoders.joinToString { it.name }
+                            }"
+                        )
+
+                        ImmutableList.copyOf(softwareEncoders)
+
+                    } else {
+
+                        Log.w(
+                            "VideoShrink",
+                            "No software encoder found; using default selection."
+                        )
+
+                        EncoderSelector.DEFAULT.selectEncoderInfos(mimeType)
+                    }
+                }
+
+                encoderFactoryBuilder.setVideoEncoderSelector(
+                    softwareEncoderSelector
+                )
+            }
+
+            val encoderFactory =
+                encoderFactoryBuilder.build()
 
             val transformer =
                 Transformer.Builder(context)
@@ -293,6 +343,26 @@ class VideoProcessorModule : Module() {
                                 result: ExportResult
                             ) {
                                 activeTransformer = null
+                                
+                                val videoProcess = when (result.videoConversionProcess) {
+                                    ExportResult.CONVERSION_PROCESS_TRANSCODED ->
+                                        "TRANSCODED"
+
+                                    ExportResult.CONVERSION_PROCESS_TRANSMUXED ->
+                                        "TRANSMUXED"
+
+                                    ExportResult.CONVERSION_PROCESS_TRANSMUXED_AND_TRANSCODED ->
+                                        "BOTH"
+
+                                    else -> "UNKNOWN"
+                                }
+
+                                Log.d(
+                                    "VideoShrink",
+                                    "Video process: $videoProcess, " +
+                                        "Requested bitrate: $targetVideoBitrate, " +
+                                        "Actual video bitrate: ${result.averageVideoBitrate}"
+                                )
 
                                 val file = File(outputPath)
 
@@ -309,10 +379,13 @@ class VideoProcessorModule : Module() {
 
                                 promise.resolve(
                                     mapOf(
-                                        "uri" to Uri.fromFile(file)
-                                            .toString(),
+                                        "uri" to Uri.fromFile(file).toString(),
                                         "outputPath" to outputPath,
-                                        "outputSizeBytes" to file.length()
+                                        "outputSizeBytes" to file.length(),
+                                        "videoProcess" to videoProcess,
+                                        "requestedVideoBitrate" to targetVideoBitrate,
+                                        "actualVideoBitrate" to result.averageVideoBitrate,
+                                        "encoderDiagnostics" to getEncoderDiagnostics()
                                     )
                                 )
                             }
@@ -400,6 +473,81 @@ class VideoProcessorModule : Module() {
             resolutionAwareBitrate,
             sourceBasedBudget.coerceAtLeast(64_000)
         )
+    }
+
+    private fun getEncoderDiagnostics(): String {
+        return try {
+            val codecList = MediaCodecList(
+                MediaCodecList.REGULAR_CODECS
+            )
+
+            val encoders = codecList.codecInfos.filter { codec ->
+                codec.isEncoder &&
+                    codec.supportedTypes.any { type ->
+                        type.equals(
+                            MimeTypes.VIDEO_H264,
+                            ignoreCase = true
+                        )
+                    }
+            }
+
+            if (encoders.isEmpty()) {
+                return "No H.264 video encoder found."
+            }
+
+            encoders.joinToString("\n\n") { codec ->
+                try {
+                    val capabilities = codec.getCapabilitiesForType(
+                        MimeTypes.VIDEO_H264
+                    )
+
+                    val videoCapabilities =
+                        capabilities.videoCapabilities
+
+                    val encoderCapabilities =
+                        capabilities.encoderCapabilities
+
+                    val bitrateRange =
+                        videoCapabilities?.bitrateRange
+
+                    val supportsCBR =
+                        encoderCapabilities?.isBitrateModeSupported(
+                            MediaCodecInfo.EncoderCapabilities.BITRATE_MODE_CBR
+                        ) ?: false
+
+                    val supportsVBR =
+                        encoderCapabilities?.isBitrateModeSupported(
+                            MediaCodecInfo.EncoderCapabilities.BITRATE_MODE_VBR
+                        ) ?: false
+
+                    val supportsCQ =
+                        encoderCapabilities?.isBitrateModeSupported(
+                            MediaCodecInfo.EncoderCapabilities.BITRATE_MODE_CQ
+                        ) ?: false
+
+                    val bitrateRangeText =
+                        if (bitrateRange != null) {
+                            "${bitrateRange.lower / 1000}-${bitrateRange.upper / 1000} kbps"
+                        } else {
+                            "Unknown"
+                        }
+
+                    """
+                    Encoder: ${codec.name}
+                    Bitrate range: $bitrateRangeText
+                    CBR supported: $supportsCBR
+                    VBR supported: $supportsVBR
+                    CQ supported: $supportsCQ
+                    """.trimIndent()
+
+                } catch (error: Exception) {
+                    "Encoder: ${codec.name}\nDetails unavailable: ${error.message}"
+                }
+            }
+
+        } catch (error: Exception) {
+            "Encoder diagnostics failed: ${error.message}"
+        }
     }
 
     private fun calculateCustomBitrate(

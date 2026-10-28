@@ -88,6 +88,7 @@ export default function CompressScreen() {
   const handleTargetChange = (value: string) => {
     const normalized = value.replace(",", ".");
 
+    // Allow numbers such as 5, 10, 10.5 and 10.25
     if (!/^\d*\.?\d{0,2}$/.test(normalized)) {
       return;
     }
@@ -110,10 +111,12 @@ export default function CompressScreen() {
     }
 
     if (settings.preset === "custom") {
+      const targetSizeMB = settings.targetSizeMB;
+
       if (
-        settings.targetSizeMB === null ||
-        !Number.isFinite(settings.targetSizeMB) ||
-        settings.targetSizeMB <= 0
+        targetSizeMB === null ||
+        !Number.isFinite(targetSizeMB) ||
+        targetSizeMB <= 0
       ) {
         Alert.alert(
           "Invalid Target Size",
@@ -124,13 +127,32 @@ export default function CompressScreen() {
 
       if (
         video.sizeBytes !== null &&
-        settings.targetSizeMB * 1024 * 1024 >= video.sizeBytes
+        targetSizeMB * 1024 * 1024 >= video.sizeBytes
       ) {
         Alert.alert(
           "Target Size Too Large",
           "Choose a target smaller than the original video size.",
         );
         return;
+      }
+
+      if (video.durationMs !== null && video.durationMs > 0) {
+        const durationSeconds = video.durationMs / 1000;
+
+        const totalBitrate =
+          (targetSizeMB * 1024 * 1024 * 8 * 0.95) / durationSeconds;
+
+        const audioBitrate = settings.removeAudio ? 0 : 128_000;
+
+        const estimatedVideoBitrate = totalBitrate - audioBitrate;
+
+        if (estimatedVideoBitrate < 100_000) {
+          Alert.alert(
+            "Target Size Too Small",
+            "This target is too small for the video's duration. Please choose a larger size or enable Remove Audio.",
+          );
+          return;
+        }
       }
     }
 
@@ -146,6 +168,17 @@ export default function CompressScreen() {
       });
 
       setCompressionResult(result);
+
+      if (settings.preset === "custom") {
+        Alert.alert(
+          "Encoder Diagnostics",
+          `Video Process: ${result.videoProcess ?? "Unknown"}\n` +
+            `Requested Bitrate: ${result.requestedVideoBitrate ?? "Unknown"}\n` +
+            `Actual Bitrate: ${result.actualVideoBitrate ?? "Unknown"}\n` +
+            `Output Size: ${(result.outputSizeBytes / (1024 * 1024)).toFixed(2)} MB\n\n` +
+            `AVAILABLE ENCODERS:\n${result.encoderDiagnostics ?? "Unavailable"}`,
+        );
+      }
 
       console.log("Compression result:", result);
 

@@ -8,6 +8,10 @@ export interface CompressionResult {
   uri: string;
   outputPath: string;
   outputSizeBytes: number;
+  videoProcess?: string;
+  requestedVideoBitrate?: number;
+  actualVideoBitrate?: number;
+  encoderDiagnostics?: string;
 }
 
 export type NativeCompressionPreset = "small" | "balanced" | "high" | "custom";
